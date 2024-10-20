@@ -1,111 +1,136 @@
--- Get services
-local player = game.Players.LocalPlayer
-local userInputService = game:GetService("UserInputService")
-local runService = game:GetService("RunService")
-local players = game:GetService("Players")
+-- Services
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Camera = game.Workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
--- Create GUI
-local screenGui = Instance.new("ScreenGui")
-local toggleButton = Instance.new("TextButton")
+-- Variables
+local aimbotEnabled = false
+local espEnabled = false
+local espBoxes = {} -- Store ESP boxes
 
--- Set up GUI properties
-screenGui.Parent = player.PlayerGui
-toggleButton.Size = UDim2.new(0, 200, 0, 50)
-toggleButton.Position = UDim2.new(0.5, -100, 0, 20)
-toggleButton.BackgroundColor3 = Color3.fromRGB(0, 170, 0)
-toggleButton.Text = "Toggle Aimbot"
-toggleButton.Parent = screenGui
+-- GUI Creation
+local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 200, 0, 100)
+MainFrame.Position = UDim2.new(0, 50, 0, 50)
+MainFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+MainFrame.Visible = true
 
-local aimbotEnabled = false -- Aimbot toggle
-local closestPlayer = nil -- Variable to store the closest player
+-- Aimbot Toggle Button
+local AimbotButton = Instance.new("TextButton", MainFrame)
+AimbotButton.Size = UDim2.new(1, 0, 0, 50)
+AimbotButton.Position = UDim2.new(0, 0, 0, 0)
+AimbotButton.Text = "Toggle Aimbot"
+AimbotButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
 
--- Function to get the closest player to the local player
-local function getClosestPlayer()
-    local character = player.Character or player.CharacterAdded:Wait()
-    local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-    
-    local closestDistance = math.huge -- Start with a very large distance
-    closestPlayer = nil -- Reset closest player
+-- ESP Toggle Button
+local ESPButton = Instance.new("TextButton", MainFrame)
+ESPButton.Size = UDim2.new(1, 0, 0, 50)
+ESPButton.Position = UDim2.new(0, 0, 0, 50)
+ESPButton.Text = "Toggle ESP"
+ESPButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
 
-    -- Iterate through all players
-    for _, otherPlayer in pairs(players:GetPlayers()) do
-        if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild("Head") then
-            local otherHumanoidRootPart = otherPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if otherHumanoidRootPart then
-                -- Calculate the distance between the local player and the other player
-                local distance = (otherHumanoidRootPart.Position - humanoidRootPart.Position).magnitude
-                if distance < closestDistance then
-                    closestDistance = distance
-                    closestPlayer = otherPlayer
+-- Function to get the closest player to the crosshair
+local function getClosestPlayerToCrosshair()
+    local closestPlayer = nil
+    local shortestDistance = math.huge
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+            local head = player.Character.Head
+            local screenPosition, onScreen = Camera:WorldToScreenPoint(head.Position)
+
+            if onScreen then
+                local mousePos = UserInputService:GetMouseLocation()
+                local distance = (Vector2.new(screenPosition.X, screenPosition.Y) - mousePos).magnitude
+                
+                if distance < shortestDistance then
+                    shortestDistance = distance
+                    closestPlayer = player
                 end
             end
         end
     end
+
+    return closestPlayer
 end
 
--- Function to snap aim instantly to the closest player's head
-local function aimAtClosestPlayer()
-    local character = player.Character or player.CharacterAdded:Wait()
-    local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-    
-    -- If we found a valid closest player
-    if closestPlayer and closestPlayer.Character and closestPlayer.Character:FindFirstChild("Head") then
-        local targetHead = closestPlayer.Character.Head
-        local targetPosition = targetHead.Position
-        local playerPosition = humanoidRootPart.Position
-
-        -- Snap the player's HumanoidRootPart instantly towards the target's head
-        humanoidRootPart.CFrame = CFrame.new(playerPosition, targetPosition)
+-- Aimbot Logic
+local function aimAtPlayer(player)
+    if player and player.Character and player.Character:FindFirstChild("Head") then
+        local head = player.Character.Head
+        -- This line ensures the camera aims at the head
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, head.Position)
     end
 end
 
--- Function to toggle the aimbot on button click
-toggleButton.MouseButton1Click:Connect(function()
+-- ESP (Wallhack) Logic
+local function createESPBox(player)
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local humanoidRootPart = player.Character.HumanoidRootPart
+        local box = Instance.new("BoxHandleAdornment")
+        
+        -- Box properties
+        box.Size = humanoidRootPart.Size + Vector3.new(2, 2, 2)  -- Slightly bigger than the character
+        box.Adornee = humanoidRootPart -- Attach to the character's root part
+        box.Color3 = Color3.fromRGB(255, 0, 0) -- Set the ESP box color (red in this case)
+        box.Transparency = 0.5 -- Set transparency (0 is opaque, 1 is fully transparent)
+        box.AlwaysOnTop = true -- Make sure the ESP box is always visible
+        box.ZIndex = 0
+        box.Parent = humanoidRootPart
+
+        -- Store reference to remove later
+        table.insert(espBoxes, box)
+    end
+end
+
+local function removeESPBoxes()
+    for _, box in pairs(espBoxes) do
+        box:Destroy()
+    end
+    espBoxes = {}
+end
+
+-- Toggle Aimbot
+AimbotButton.MouseButton1Click:Connect(function()
     aimbotEnabled = not aimbotEnabled
-    if aimbotEnabled then
-        toggleButton.Text = "Aimbot: ON"
+    AimbotButton.Text = aimbotEnabled and "Aimbot: ON" or "Aimbot: OFF"
+end)
+
+-- Toggle ESP
+ESPButton.MouseButton1Click:Connect(function()
+    espEnabled = not espEnabled
+    ESPButton.Text = espEnabled and "ESP: ON" or "ESP: OFF"
+    if espEnabled then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                createESPBox(player)
+            end
+        end
     else
-        toggleButton.Text = "Aimbot: OFF"
+        removeESPBoxes()
     end
 end)
 
--- Continuously check for the closest player and aim if aimbot is enabled
-runService.RenderStepped:Connect(function()
-    getClosestPlayer() -- Update closest player every frame
+-- Aimbot and ESP updates during the game loop
+RunService.RenderStepped:Connect(function()
+    -- Aimbot activation when enabled
     if aimbotEnabled then
-        aimAtClosestPlayer() -- Aim if aimbot is active
+        local closestPlayer = getClosestPlayerToCrosshair()
+        if closestPlayer then
+            aimAtPlayer(closestPlayer)
+        end
     end
-end)
-
--- ESP Functionality
-local function createESP(player)
-    local highlight = Instance.new("Highlight") -- Create a Highlight object
-    highlight.Adornee = player.Character -- Attach it to the player's character
-    highlight.FillColor = Color3.new(1, 0, 0) -- Set fill color to red
-    highlight.OutlineColor = Color3.new(1, 1, 1) -- Set outline color to white
-    highlight.FillTransparency = 0.5 -- Set transparency
-    highlight.Parent = player.Character -- Parent to the character
-end
-
--- Create ESP for all players in the game
-for _, otherPlayer in pairs(players:GetPlayers()) do
-    if otherPlayer ~= player and otherPlayer.Character then
-        createESP(otherPlayer)
-    end
-end
-
--- Update ESP whenever players join or leave
-players.PlayerAdded:Connect(function(newPlayer)
-    newPlayer.CharacterAdded:Connect(function()
-        createESP(newPlayer)
-    end)
-end)
-
-players.PlayerRemoving:Connect(function(leavingPlayer)
-    if leavingPlayer.Character then
-        local highlight = leavingPlayer.Character:FindFirstChildOfClass("Highlight")
-        if highlight then
-            highlight:Destroy() -- Remove highlight on player leaving
+    
+    -- Update ESP for new players joining the game
+    if espEnabled then
+        removeESPBoxes()
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                createESPBox(player)
+            end
         end
     end
 end)
